@@ -75,7 +75,7 @@
 #  243. https://en.wiktionary.org/wiki/Wiktionary:Main_Page
 sub query_wiktionary($) {
     my $word =$_[0];
-    open my $R, qq!lynx "https://en.wiktionary.org/wiki/$word" -dump | !;
+    open my $R, qq!lynx -dump "https://en.wiktionary.org/wiki/$word" | !;
     my $ret={};
     my $language="";
     my $phys_section="";

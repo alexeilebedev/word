@@ -38,7 +38,8 @@ GetOptions(
     , "h|help" => \&help
     ) or die $usage;
 
-my $word = shift @ARGV;
+# get all arguments from command line, joined by space
+my $word = join(" ",@ARGV);
 
 if ($opt_dict eq "all") {
     $opt_dict = ".*";
@@ -114,6 +115,7 @@ sub log_word($) {
 
 # sanitize
 $word =~ s/["`&*?]+//g; 
+$word =~ s/ /%20/g;
 my $ndict=0;
 foreach my $source(@sources) {
     if ($source->{name} =~ /$opt_dict/) {
