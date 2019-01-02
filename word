@@ -1,0 +1,345 @@
+#!/usr/local/bin/perl
+use strict;
+use Getopt::Long;
+my $verbose=0;
+my $opt_t=0;
+my $opt_dict="wiktionary";
+my $tlang="Russian";
+my $opt_all=0;
+my @sources = (
+    { name => "aonaware", handler => \&query_aonaware }
+    , { name => "wiktionary", handler => \&query_wiktionary }
+    , { name => "wordnet", handler => \&query_wordnet }
+);
+my @source_names=map { $_->{name} } @sources;
+my $usage =
+    "$0 <word> [-l] [-t]
+    -t         show translation (default:definition)
+    -a         choose all dictionaries
+    -tlang     regex for target language (default: $tlang)
+    -v         verbosity level (additional -v's increase verbosity)
+    -dict      regex of dictionaries to use (default: $opt_dict)
+                  could be @source_names or '.*' or all
+    -h|--help  display this help
+\n";
+sub help { print $usage; exit(1); }
+GetOptions(
+    "-v+" => \$verbose
+    , "-t" => \$opt_t
+    , "-a" => \$opt_all
+    , "dict=s" => \$opt_dict
+    , "h|help" => \&help
+    ) or die $usage;
+
+my $word = shift @ARGV;
+
+if ($opt_dict eq "all") {
+    $opt_dict = ".*";
+}
+
+# -a - increase verbosity and go for all dictionaries
+if ($opt_all) {
+    $opt_dict = ".*";
+    $verbose++;
+}
+
+#--------------------------------------------------------------------------------
+
+sub clean_lynx($) {
+    my $line=$_[0];
+    # clean up the line...
+    # remove lynx link annotations
+    $line =~ s/\[\d+\]//g;
+    # replace leading * (unix-unfriendly) with -
+    $line =~ s/(^\s+)\*/$1-/;
+    $line =~ s/\s+$//; # strip trailing whitespace
+    return $line;
+}
+
+#--------------------------------------------------------------------------------
+
+# return query object
+# ret->{word} -- word
+# ret->{definition} -- text
+# ret->{reference} -- references
+# AONAWARE output format (handled with lynx first...)
+# skip headers:
+#                            Definition Lookup
+#                        Search for ____________________
+#                  Using dictionary
+# [Any_________________________________________________________]
+#                           Search  Clear Form
+#        ________________________________________________________
+# 3 definitions found for inveterate:
+# OR
+# No definitions found for asdfasdf.
+# ...
+#           ________________________________________________________
+#    [9]Aonaware Web Services
+# References
+#    1. http://services.aonaware.com/DictService/Default.aspx?action=dictinfo&query=gcide
+#    2. http://services.aonaware.com/DictService/Default.aspx?action=dictinfo&query=gcide
+# ...
+sub query_aonaware($) {
+    my $word =$_[0];
+    open my $R, qq!lynx "http://services.aonaware.com/DictService/Default.aspx?action=define&dict=*&query=$word" -dump | !;
+    my $ret={};
+    my $endheader=0; # saw end of header
+    my $startfooter=0; # saw beginning of footer
+    my $footer = ""; # contents of the footer
+    $ret->{word} = $word;
+    while (<$R>) {
+	$_=clean_lynx($_);
+	if (/definitions found for/) {
+	    $_="";
+	    $endheader=1;
+	}
+	# lynx shows this footer 
+	if ($endheader && /^\s+______________/) {
+	    $startfooter=1;
+	}
+	if ($startfooter && $_) {
+	    $ret->{reference} .= "$_\n";
+	}
+	if ($endheader && !$startfooter && $_ ne "") {
+	    $ret->{definition} .= "$_\n";
+	}
+    }
+    return $ret;
+}
+
+#--------------------------------------------------------------------------------
+
+#[1]Edit [2]Wiktionary (en) [3]Wiktionary Atom feed
+# inveterate
+#    Definition from Wiktionary, the free dictionary
+#    [4]Jump to navigation [5]Jump to search
+#    [ ]
+# Contents
+#    ... < some overview >
+# English[[23]edit]
+#    [24]WOTD - 12 July 2012
+# Etymology[[25]edit]
+#    From [26]Latin [27]inveteratus ("of long standing, chronic"), form of
+#    [28]inveterare, from [29]in- ("in, into") + [30]veterare ("to age"),
+#    from [31]vetus, form of [32]veteris ("old"); latter ancestor to
+#    [33]veteran.
+#    Cognate to Italian [34]inveterato.
+# Pronunciation[[35]edit]
+#      * [36]IPA^([37]key): /In|vEt@rIt/
+#      * Rhymes: [38]-Et@rIt
+#      * Hyphenation: in·vet·er·ate
+# Adjective[[39]edit]
+#    inveterate ([40]comparative [41]more inveterate, [42]superlative
+#    [43]most inveterate)
+#     1. [44]firmly [45]established from having been around for a [46]long
+#        time; of long [47]standing
+#    ...
+# Synonyms[[56]edit]
+#    ...
+# Antonyms[[61]edit]
+#    ...
+# Related terms[[64]edit]
+#    ...
+# Translations[[67]edit]
+#    firmly established
+#    ...
+#      * Russian: [85]zakorene'lyj [86](ru) (zakorenélyj)
+# Verb[[128]edit]
+#    ...
+# Derived terms[[139]edit]
+#      * [140]inveteration
+# References[[141]edit]
+#      * "[142]inveterate" in Douglas Harper, Online Etymology Dictionary,
+#        2001-2018.
+#      * [143]inveterate in [144]Webster's Revised Unabridged Dictionary, G.
+#        & C. Merriam, 1913
+# Anagrams[[145]edit]
+#      * [146]Everettian, [147]entreative
+#      __________________________________________________________________
+# Italian[[148]edit]
+# ...
+# Latin[[156]edit]
+# ...
+# Personal tools
+# Namespaces
+# Variants
+# Views
+# More
+# Search
+# Navigation
+# Tools
+# In other languages
+# Print/export
+# References
+#    Visible links:
+#    1. https://en.wiktionary.org/w/index.php?title=inveterate&action=edit
+#    ...
+#  241. https://www.mediawiki.org/
+#  ...
+#    Hidden links:
+#  243. https://en.wiktionary.org/wiki/Wiktionary:Main_Page
+sub query_wiktionary($) {
+    my $word =$_[0];
+    open my $R, qq!lynx "https://en.wiktionary.org/wiki/$word" -dump | !;
+    my $ret={};
+    my $language="";
+    my $phys_section="";
+    # map of recognized languages
+    # for each language, whether I want its data
+    my %langs = (
+	"English" => 1
+	, "Catalan" => 0
+	, "Czech" => 0
+	, "French" => 0
+	, "German" => 0
+	, "Ido" => 0
+	, "Irish" => 0
+	, "Italian" => 0
+	, "Japanese" => 0
+	, "Latin" => 0
+	, "Spanish" => 0
+	, "Swedish" => 0
+	);
+    # map of recognized wiktionary sections
+    # for each section, whether I want to query it
+    my %subsections = (
+	"Etymology" => !$opt_t
+	,"Etymology 2" => !$opt_t
+	,"Etymology 3" => !$opt_t
+	,"Etymology 4" => !$opt_t
+	, "Pronunciation" => !$opt_t
+	, "Adjective" => !$opt_t
+	, "Synonyms" => !$opt_t
+	, "Antonyms" => !$opt_t
+	, "Related" => !$opt_t
+	, "Translations" => $opt_t
+	, "Verb" => !$opt_t
+	, "Translations to be checked" => ($verbose >= 2)
+	, "Derived" => ($verbose >= 1 && !$opt_t)
+	, "References" => ($verbose >= 2 && !$opt_t)
+	, "Anagrams" => ($verbose >= 1 && !$opt_t)
+	);
+    while (<$R>) {
+	$_ = clean_lynx($_);
+	# remove "edit" annotations
+	$_ =~ s/\[edit\]//g;
+	#section names align left,
+	if (/^(\w+)/) {
+	    $phys_section=$1;
+	}
+	#but could also be indented. because this is
+	#web... in this case the section name
+	#must be on a line by itself
+	if (/^\s+(.+?)\s*$/ && $subsections{$1}) {
+	    $phys_section=$1;
+	}
+	# switch language if the language is recognized
+	if (defined($langs{$phys_section})) {
+	    $language = $phys_section;
+	}
+	# deeply nested? - skip
+	my $deep = ($_ =~ /^       /); 
+	if ($deep && $verbose==0) {
+	    $_="";
+	}
+	# subsection must be marked for display
+	my $show = $subsections{$phys_section};
+	$show = $show && !m/__________/;
+	# and if we're not translating, language
+	# section must match
+	if (!$opt_t){
+	    $show = $show && $langs{$language}>0;
+	}
+	if ($_ ne ""&& $show){
+	    $ret->{definition} .= "$_\n";
+	}
+    }
+    return $ret;
+}
+
+#--------------------------------------------------------------------------------
+#    WordNet Search - 3.1
+#    - [1]WordNet home page - [2]Glossary - [3]Help
+#  Word to search for: rod_________________ Search WordNet
+#  Display Options: [(Select option to change)] Change
+#  Key: "S:" = Show Synset (semantic) relations, "W:" = Show Word
+#  (lexical) relations
+#  Display options for sense: (gloss) "an example sentence"
+# Noun
+#   * [4]S: (n) rod (a long thin implement made of metal or wood)
+#   * [5]S: (n) rod (any rod-shaped bacterium)
+#   * [6]S: (n) [7]perch, rod, [8]pole (a linear measure of 16.5 feet)
+#   * [9]S: (n) [10]perch, rod, [11]pole (a square rod of land)
+#   * [12]S: (n) rod, [13]rod cell, [14]retinal rod (a visual receptor
+#     cell that is sensitive to dim light)
+#   * [15]S: (n) [16]gat, rod (a gangster's pistol)
+# References
+# 1. http://wordnet.princeton.edu/
+# 2. http://wordnet.princeton.edu/man/wngloss.7WN.html
+# ...
+sub query_wordnet($){
+    my $word =$_[0];
+    open my $R, qq!lynx -dump "http://wordnetweb.princeton.edu/perl/webwn?s=$word" | !;
+    my $ret={};
+    my $endheader=0;#saw end of header
+    my $startfooter=0;
+    $ret->{word} = $word;
+    while (<$R>) {
+	$_=clean_lynx($_);
+	# clean up S: annotation
+	$_ =~ s/- S: /- /;
+	if (/Display options for sense/) {
+	    $_="";
+	    $endheader=1;
+	}
+	if ($endheader && /^References/) {
+	    $startfooter=1;
+	}
+	if ($startfooter && $_) {
+	    $ret->{reference} .= "$_\n";
+	}
+	if ($endheader && !$startfooter && $_ ne "") {
+	    $ret->{definition} .= "$_\n";
+	}
+    }
+    return $ret;
+}
+
+#--------------------------------------------------------------------------------
+
+sub log_word($) {
+    if (open my $W, ">>log/word") {
+	use POSIX;
+	my $timestamp = POSIX::strftime("%Y/%m/%dT%H:%M:%S", localtime);
+	print $W "timestamp:$timestamp  word:'$_[0]'\n";
+    }
+}
+
+#--------------------------------------------------------------------------------
+
+# sanitize
+$word =~ s/["`&*?]+//g; 
+my $ndict=0;
+foreach my $source(@sources) {
+    if ($source->{name} =~ /$opt_dict/) {
+	if ($ndict>0) {
+	    print "\n";
+	}
+	$ndict++;
+	my $ret = $source->{handler}->($word);
+	my $out="";
+	if ($ret) {
+	    $out .= $ret->{definition};
+	}
+	if ($verbose >= 1) {
+	    $out .= $ret->{reference};
+	}
+	if ($out) {
+	    print "Source $source->{name}:\n";
+	    print $out;
+	    log_word($word);
+	}
+    }
+}
+
