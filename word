@@ -9,32 +9,33 @@ require "$dirname/word-wiktionary.pl";
 require "$dirname/word-aonaware.pl";
 require "$dirname/word-wordnet.pl";
 require "$dirname/word-urbandict.pl";
-my $opt_t=0;
-my $opt_dict="(wiktionary|wordnet|urbandict)";
-my $tlang="Russian";
-my $opt_all=0;
+our $opt_t=0;
+our $opt_dict="(wiktionary|wordnet|urbandict)";
+our $opt_all=0;
+our $logfile="log/word";
 my @sources = (
-    { name => "aonaware", handler => \&query_aonaware }
-    , { name => "wiktionary", handler => \&query_wiktionary }
-    , { name => "wordnet", handler => \&query_wordnet }
-    , { name => "urbandict", handler => \&query_urbandict }
-);
+    { name => "aonaware", handler => \&query_aonaware, translations=>0 }
+    , { name => "wiktionary", handler => \&query_wiktionary, translations=>1 }
+    , { name => "wordnet", handler => \&query_wordnet, translations=>0 }
+    , { name => "urbandict", handler => \&query_urbandict, translations=>0 }
+    );
 my @source_names=map { $_->{name} } @sources;
 my $usage =
-    "$0 <word> [-l] [-t]
+    "$0 <word> [-t]
     -t         show translation (default:definition)
     -a         choose all dictionaries
-    -tlang     regex for target language (default: $tlang)
     -v         verbosity level (additional -v's increase verbosity)
+    -logfile=f choose logfile (it is updated if it exists)
     -dict      regex of dictionaries to use (default: $opt_dict)
-                  could be " . join(", ",@source_names) . ", or '.*' or all
+    could be " . join(", ",@source_names) . ", or '.*' or all
     -h|--help  display this help
-\n";
+    \n";
 sub help { print $usage; exit(1); }
 GetOptions(
     "-t" => \$opt_t
     , "-a" => \$opt_all
-    , "dict=s" => \$opt_dict
+    , "-logfile=s" => \$logfile
+    , "-dict=s" => \$opt_dict
     , "h|help" => \&help
     ) or die $usage;
 
@@ -57,9 +58,9 @@ sub limitlines($$) {
     my $ret="";
     my $idx=0;
     foreach my $line(split(/\n/,$_[0])) {
-	$ret .= $line."\n";
-	$idx++;
-	last if ($idx >= $_[1]);
+        $ret .= $line."\n";
+        $idx++;
+        last if ($idx >= $_[1]);
     }
     return $ret;
 }
@@ -70,7 +71,7 @@ sub limitlines($$) {
 sub indented($$) {
     my $ret="";
     foreach my $line(split(/\n/,$_[0])) {
-	$ret .= $_[1] . $line . "\n";
+        $ret .= $_[1] . $line . "\n";
     }
     return $ret;
 }
@@ -81,8 +82,8 @@ sub fetch_json {
     my $url=$_[0];
     my $text=`curl -s '$url'`;
     if ($ENV{VERBOSE}>0){
-	print "curl -s '$url'\n";
-	print "$text\n";
+        print "curl -s '$url'\n";
+        print "$text\n";
     }
     my $obj= decode_json( $text);
     return $obj;
@@ -103,11 +104,13 @@ sub clean_lynx($) {
 
 #--------------------------------------------------------------------------------
 
-sub log_word($) {
-    if (open my $W, ">>log/word") {
-	use POSIX;
-	my $timestamp = POSIX::strftime("%Y/%m/%dT%H:%M:%S", localtime);
-	print $W "timestamp:$timestamp  word:'$_[0]'\n";
+sub log_word($$) {
+    if (-f $logfile) {
+        if (open my $W, ">>$logfile") {
+            use POSIX;
+            my $timestamp = POSIX::strftime("%Y/%m/%dT%H:%M:%S", localtime);
+            print $W "timestamp:$timestamp  word:'$_[0]'  out:'$_[1]'\n";
+        }
     }
 }
 
@@ -118,22 +121,22 @@ $word =~ s/["`&*?]+//g;
 $word =~ s/ /%20/g;
 my $ndict=0;
 foreach my $source(@sources) {
-    if ($source->{name} =~ /$opt_dict/) {
-	if ($ndict>0) {
-	    print "\n";
-	}
-	$ndict++;
-	# result is an object with fields definition, etc.
-	my $ret = $source->{handler}->($word);
-	my $out="";
-	if ($ret) {
-	    $out .= $ret->{definition};
-	}
-	if ($out) {
-	    print "Source $source->{name}:\n";
-	    print $out;
-	    log_word($word);
-	}
+    if ($source->{name} =~ /$opt_dict/ && (!$opt_t || $source->{translations})) {
+        if ($ndict>0) {
+            print "\n";
+        }
+        $ndict++;
+        # result is an object with fields definition, etc.
+        my $ret = $source->{handler}->($word);
+        my $out="";
+        if ($ret) {
+            $out .= $ret->{definition};
+        }
+        if ($out) {
+            print "Source $source->{name}:\n";
+            print $out;
+            log_word($word,length($out));
+        }
     }
 }
 

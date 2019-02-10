@@ -1,0 +1,21 @@
+#!/usr/local/bin/perl
+# quick translation helper
+my @words=qw(French Spanish Greek Italian Latin Russian English German);
+my $regx = "(" . join("|",@words) . ")";
+my $word=shift @ARGV;
+open my $R, "word -t $word |";
+# Some meaning                <- keep this line
+# Translations                <- kill this line
+#     - Latin: mirus          <- keep 
+#     - Manx: ard-yindyssagh  <- kill this
+#     - Mongolian: gajhaltaj (gajhaltaj)
+while (<$R>){
+    my $match=1;
+    if (s/^\s+- //){
+	$match = /^$regx:/;
+    }
+    if ($match){
+	print;
+    }
+}
+close $R;

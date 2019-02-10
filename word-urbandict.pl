@@ -1,3 +1,6 @@
+use strict;
+our $opt_t;
+our $opt_all;
 
 # {"list":
 #      [{"definition":"Abbreviation for \"[my face when]\"" example:"zzz", thumbs_up:12345, thumbs_down:123 }
